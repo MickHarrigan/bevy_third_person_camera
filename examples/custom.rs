@@ -1,10 +1,12 @@
 use bevy::prelude::*;
 use bevy_third_person_camera::*;
+use std::f32::consts::{E, PI};
 
 fn main() {
     App::new()
         .add_plugins((DefaultPlugins, ThirdPersonCameraPlugin))
-        .add_systems(Startup, (spawn_player, spawn_world, spawn_camera))
+        .add_systems(Startup, (spawn_player, spawn_camera, spawn_world))
+        // .add_systems(Update, (player_movement_keyboard, log))
         .add_systems(Update, player_movement_keyboard)
         .run();
 }
@@ -15,36 +17,54 @@ struct Player;
 #[derive(Component)]
 struct Speed(f32);
 
+fn log(camera: Query<(&Transform, &ThirdPersonCamera)>) {
+    for (location, cam) in &camera {
+        // inside has to be negative to make top Pi and bottom 0
+        // info!("Angle: {}", cam.focus.angle_between(-location.translation));
+        info!("Forward: {}", location.forward().xz().normalize());
+    }
+}
+
 fn spawn_player(mut commands: Commands, assets: Res<AssetServer>) {
+    let model = assets.load("Player2.gltf#Scene0");
     let player = (
         SceneBundle {
-            scene: assets.load("Player.gltf#Scene0"),
-            transform: Transform::from_xyz(0.0, 0.5, 0.0),
+            scene: model,
+            transform: Transform::from_xyz(0.0, 0.0, 0.0),
             ..default()
         },
         Player,
         ThirdPersonCameraTarget,
         Speed(2.5),
     );
-
     commands.spawn(player);
 }
 
+// TODO: fix the location of the focus in terms of the actual world, otherwise it seems alright
+// with the debug info calls it shows that the functions and things are now able to modify both the
+// camera focus and the displacement via the data defined in the struct
 fn spawn_camera(mut commands: Commands) {
     let camera = (
         Camera3dBundle {
-            transform: Transform::from_xyz(-2.0, 2.5, 5.0).looking_at(Vec3::ZERO, Vec3::Y),
+            transform: Transform::from_xyz(0.0, 2.5, 5.0)
+                .looking_at(Vec3::new(0., 0.81, 0.), Vec3::Y),
             ..default()
         },
         ThirdPersonCamera {
-            aim_enabled: true,
-            aim_speed: 3.0, // default
-            aim_zoom: 0.7,  // default
-            offset_enabled: true,
-            offset_toggle_enabled: true,
-            gamepad_settings: CustomGamepadSettings { ..default() },
-            zoom_enabled: true,        // default
-            zoom: Zoom::new(1.5, 3.0), // default
+            true_focus: Vec3::new(0., 0.81, 0.),
+            aim_enabled: false,
+            aim_zoom: 0.7,
+            zoom_enabled: false,
+            zoom: Zoom::new(2.0, 5.0),
+            focus_modifier: CameraFocusModifier {
+                lower_threshold: PI / 2.,
+                upper_threshold: 2. * PI / 3.,
+                max_forward_displacement: 0.5,
+                max_backward_displacement: 0.5,
+                // typical logistic function centered at 0.5
+                lower_displacement_function: |x| 1. / (1. + E.powf(-15. * (x - 0.5))),
+                upper_displacement_function: |x| 1. / (1. + E.powf(-15. * (x - 0.5))),
+            },
             ..default()
         },
     );

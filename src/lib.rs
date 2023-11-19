@@ -1,6 +1,8 @@
 mod gamepad;
 mod mouse;
 
+use std::f32::consts::PI;
+
 use bevy::{
     prelude::*,
     window::{CursorGrabMode, PrimaryWindow},
@@ -25,7 +27,11 @@ impl Plugin for ThirdPersonCameraPlugin {
             Update,
             (
                 aim.run_if(aim_condition),
-                sync_player_camera.after(orbit_mouse).after(orbit_gamepad),
+                (
+                    sync_true_focus.after(orbit_mouse).after(orbit_gamepad),
+                    modify_focus,
+                )
+                    .chain(),
                 toggle_x_offset.run_if(toggle_x_offset_condition),
                 toggle_cursor.run_if(toggle_cursor_condition),
             ),
@@ -54,7 +60,10 @@ pub struct ThirdPersonCamera {
     pub cursor_lock_toggle_enabled: bool,
     pub cursor_lock_active: bool,
     pub cursor_lock_key: KeyCode,
+    pub true_focus: Vec3,
+    // this should only be edited by the program
     pub focus: Vec3,
+    pub focus_modifier: CameraFocusModifier,
     pub gamepad_settings: CustomGamepadSettings,
     pub mouse_sensitivity: f32,
     pub mouse_orbit_button_enabled: bool,
@@ -79,6 +88,8 @@ impl Default for ThirdPersonCamera {
             cursor_lock_key: KeyCode::Space,
             cursor_lock_toggle_enabled: true,
             focus: Vec3::ZERO,
+            true_focus: Vec3::ZERO,
+            focus_modifier: CameraFocusModifier::default(),
             gamepad_settings: CustomGamepadSettings::default(),
             cursor_lock_active: true,
             mouse_sensitivity: 1.0,
@@ -94,6 +105,100 @@ impl Default for ThirdPersonCamera {
             zoom_sensitivity: 1.0,
         }
     }
+}
+
+pub struct CameraFocusModifier {
+    pub max_forward_displacement: f32,
+    pub max_backward_displacement: f32,
+    /// Must be greater than Pi / 2
+    pub upper_threshold: f32,
+    /// Must be less than Pi / 2
+    pub lower_threshold: f32,
+    /// Must clasp the values between 0 and 1
+    pub upper_displacement_function: fn(f32) -> f32,
+    /// Must clasp the values between 0 and 1
+    pub lower_displacement_function: fn(f32) -> f32,
+}
+
+impl Default for CameraFocusModifier {
+    fn default() -> Self {
+        CameraFocusModifier {
+            max_forward_displacement: 0.,
+            max_backward_displacement: 0.,
+            upper_threshold: PI,
+            lower_threshold: 0.,
+            upper_displacement_function: |_a| 0.,
+            lower_displacement_function: |_a| 0.,
+        }
+    }
+}
+
+impl CameraFocusModifier {
+    // no clue what to put here just yet
+    // maybe a new function just to allow the user to make a new modifier and hide fields from them
+}
+
+// Moves the focus of the camera either forwards or backwards
+// if the angle between the character focus (true_focus) goes above the threshold,
+// then the focus moves forwards
+// if the angle goes low, then backwards
+// This **ONLY** does the logic of the focus moving, not the true_focus, nor the actual moving
+// This also relies on the true_focus not changing and must act after changes to that value have
+// occured
+pub fn modify_focus(mut cam_q: Query<(&mut ThirdPersonCamera, &Transform)>) {
+    // this gets mutable access to a ThirdPersonCamera, and the Transform of the camera
+    // from here we check if the modifications should happen
+    // (cull this later by setting this based on a boolean)
+
+    let (mut cam, transform) = cam_q.single_mut();
+    // angle is 0 - Pi, with Pi / 2 as directly behind and parallel to the ground
+    let vec = cam.true_focus - transform.translation;
+    // finds the angle between the vector connecting true_focus and camera location with the y axis
+    // this plus the rotation of the camera changing elsewhere detects how high or low the camera
+    // is in relation to the character
+    let angle = vec.normalize().dot(Vec3::Y.normalize()).acos();
+    if angle > cam.focus_modifier.upper_threshold {
+        // theta is bound between 0 - 1 (close enough, must be rounded here most likely)
+        // below only applies for 3PI/4
+        // let theta = (angle * 4. / PI) - 3.;
+        let theta = (angle - cam.focus_modifier.upper_threshold)
+            / (PI - cam.focus_modifier.upper_threshold);
+        // focus_disp is bound between 0 - 1 (close enough again)
+        let focus_disp = (cam.focus_modifier.upper_displacement_function)(theta);
+        // actual change in the xz direction, ranges from 0 - max_forward_displacement
+        let displacement = focus_disp * cam.focus_modifier.max_forward_displacement;
+        // move the focus "forward" by focus_disp
+        let xz = transform.forward().xz().normalize() * displacement;
+        // updates the focus to be the true focus plus the displacement found before
+        cam.focus = (
+            cam.true_focus.x + xz.x,
+            cam.true_focus.y,
+            cam.true_focus.z + xz.y,
+        )
+            .into();
+    } else if angle < cam.focus_modifier.lower_threshold {
+        // theta is bound between 0 - 1 (close enough, must be rounded here most likely)
+        let theta =
+            (angle - cam.focus_modifier.lower_threshold) / -cam.focus_modifier.lower_threshold;
+        // focus_disp is bound between 0 - 1 (close enough again)
+        let focus_disp = (cam.focus_modifier.upper_displacement_function)(theta);
+        // actual change in the xz direction, ranges from 0 - max_forward_displacement
+        let displacement = focus_disp * cam.focus_modifier.max_forward_displacement;
+        // move the focus "forward" by focus_disp
+        let xz = transform.back().xz().normalize() * displacement;
+        // updates the focus to be the true focus plus the displacement found before
+        cam.focus = (
+            cam.true_focus.x + xz.x,
+            cam.true_focus.y,
+            cam.true_focus.z + xz.y,
+        )
+            .into();
+    } else {
+        cam.focus = cam.true_focus;
+    }
+    info!("Center Focus: {}", cam.true_focus);
+    info!("Actual Focus: {}", cam.focus);
+    info!("FocLoc Angle: {}", angle);
 }
 
 /// Sets the zoom bounds (min & max)
@@ -205,33 +310,28 @@ impl Default for CustomGamepadSettings {
 #[derive(Component)]
 pub struct ThirdPersonCameraTarget;
 
-fn sync_player_camera(
+// this moves the camera with the player,
+// if the player moves to (x,y,z) then the camera moves to (x2,y2,z2)
+// this should move the true focus, then the modify_focus() func can run
+fn sync_true_focus(
     player_q: Query<&Transform, With<ThirdPersonCameraTarget>>,
-    mut cam_q: Query<(&mut ThirdPersonCamera, &mut Transform), Without<ThirdPersonCameraTarget>>,
+    mut cam_q: Query<&mut ThirdPersonCamera, Without<ThirdPersonCameraTarget>>,
 ) {
-    let Ok(player) = player_q.get_single() else { return };
-    let Ok((cam, mut cam_transform)) = cam_q.get_single_mut() else { return };
+    let Ok(player) = player_q.get_single() else {
+        return;
+    };
+    let Ok(mut cam) = cam_q.get_single_mut() else {
+        return;
+    };
 
-    // Calculate the desired camera translation based on focus, radius, and xy_offset
-    let rotation_matrix = Mat3::from_quat(cam_transform.rotation);
-
-    // apply the offset if offset_enabled is true
-    let mut offset = Vec3::ZERO;
-    if cam.offset_enabled {
-        offset = rotation_matrix.mul_vec3(Vec3::new(cam.offset.offset.0, cam.offset.offset.1, 0.0));
-    }
-
-    let desired_translation =
-        cam.focus + rotation_matrix.mul_vec3(Vec3::new(0.0, 0.0, cam.zoom.radius)) + offset;
-
-    // Update the camera translation and focus
-    let delta = player.translation - cam.focus;
-    cam_transform.translation = desired_translation + delta;
+    cam.true_focus = player.translation + Vec3::new(0., 0.81, 0.);
 }
 
 // only run aiming logic if `aim_enabled` is true
 fn aim_condition(cam_q: Query<&ThirdPersonCamera, With<ThirdPersonCamera>>) -> bool {
-    let Ok(cam) = cam_q.get_single() else { return false };
+    let Ok(cam) = cam_q.get_single() else {
+        return false;
+    };
     cam.aim_enabled
 }
 
@@ -245,14 +345,18 @@ fn aim(
     btns: Res<Input<GamepadButton>>,
     time: Res<Time>,
 ) {
-    let Ok((mut cam, cam_transform)) = cam_q.get_single_mut() else { return };
+    let Ok((mut cam, cam_transform)) = cam_q.get_single_mut() else {
+        return;
+    };
 
     // check if aim button was pressed
     let aim_btn = mouse.pressed(cam.aim_button) || btns.pressed(cam.gamepad_settings.aim_button);
 
     if aim_btn {
         // rotate player or target to face direction he is aiming
-        let Ok(mut player_transform) = player_q.get_single_mut() else { return };
+        let Ok(mut player_transform) = player_q.get_single_mut() else {
+            return;
+        };
         player_transform.look_to(cam_transform.forward(), Vec3::Y);
 
         let desired_zoom = cam.zoom.min * cam.aim_zoom;
@@ -289,13 +393,17 @@ fn aim(
 }
 
 pub fn zoom_condition(cam_q: Query<&ThirdPersonCamera, With<ThirdPersonCamera>>) -> bool {
-    let Ok(cam) = cam_q.get_single() else { return false };
+    let Ok(cam) = cam_q.get_single() else {
+        return false;
+    };
     return cam.zoom_enabled && cam.cursor_lock_active;
 }
 
 // only run toggle_x_offset if `offset_toggle_enabled` is true
 fn toggle_x_offset_condition(cam_q: Query<&ThirdPersonCamera, With<ThirdPersonCamera>>) -> bool {
-    let Ok(cam) = cam_q.get_single() else { return false };
+    let Ok(cam) = cam_q.get_single() else {
+        return false;
+    };
     cam.offset_toggle_enabled
 }
 
@@ -306,7 +414,9 @@ fn toggle_x_offset(
     time: Res<Time>,
     btns: Res<Input<GamepadButton>>,
 ) {
-    let Ok(mut cam) = cam_q.get_single_mut() else { return };
+    let Ok(mut cam) = cam_q.get_single_mut() else {
+        return;
+    };
 
     // check if toggle btn was pressed
     let toggle_btn = keys.just_pressed(cam.offset_toggle_key)
@@ -334,7 +444,9 @@ fn toggle_cursor(
     keys: Res<Input<KeyCode>>,
     mut window_q: Query<&mut Window, With<PrimaryWindow>>,
 ) {
-    let Ok(mut cam) = cam_q.get_single_mut() else { return };
+    let Ok(mut cam) = cam_q.get_single_mut() else {
+        return;
+    };
 
     if keys.just_pressed(cam.cursor_lock_key) {
         cam.cursor_lock_active = !cam.cursor_lock_active;
@@ -352,6 +464,8 @@ fn toggle_cursor(
 
 // checks if the toggle cursor functionality is enabled
 fn toggle_cursor_condition(cam_q: Query<&ThirdPersonCamera>) -> bool {
-    let Ok(cam) = cam_q.get_single() else { return true };
+    let Ok(cam) = cam_q.get_single() else {
+        return true;
+    };
     cam.cursor_lock_toggle_enabled
 }
