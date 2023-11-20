@@ -164,15 +164,20 @@ pub fn modify_focus(mut cam_q: Query<(&mut ThirdPersonCamera, &Transform)>) {
     // finds the angle between the vector connecting true_focus and camera location with the y axis
     // this plus the rotation of the camera changing elsewhere detects how high or low the camera
     // is in relation to the character
-    let angle = vec.normalize().dot(Vec3::Y.normalize()).acos();
+    let angle = vec
+        .normalize()
+        .dot(Vec3::Y.normalize())
+        .acos()
+        .clamp(0.0, 1.0);
     if angle > cam.focus_modifier.upper_threshold {
         // theta is bound between 0 - 1 (close enough, must be rounded here most likely)
         // below only applies for 3PI/4
         // let theta = (angle * 4. / PI) - 3.;
-        let theta = (angle - cam.focus_modifier.upper_threshold)
-            / (PI - cam.focus_modifier.upper_threshold);
+        let theta = ((angle - cam.focus_modifier.upper_threshold)
+            / (PI - cam.focus_modifier.upper_threshold))
+            .clamp(0.0, 1.0);
         // focus_disp is bound between 0 - 1 (close enough again)
-        let focus_disp = (cam.focus_modifier.upper_displacement_function)(theta);
+        let focus_disp = (cam.focus_modifier.upper_displacement_function)(theta).clamp(0.0, 1.0);
         // actual change in the xz direction, ranges from 0 - max_forward_displacement
         let displacement = focus_disp * cam.focus_modifier.max_forward_displacement;
         // move the focus "forward" by focus_disp
@@ -186,10 +191,11 @@ pub fn modify_focus(mut cam_q: Query<(&mut ThirdPersonCamera, &Transform)>) {
             .into();
     } else if angle < cam.focus_modifier.lower_threshold {
         // theta is bound between 0 - 1 (close enough, must be rounded here most likely)
-        let theta =
-            (angle - cam.focus_modifier.lower_threshold) / -cam.focus_modifier.lower_threshold;
+        let theta = ((angle - cam.focus_modifier.lower_threshold)
+            / -cam.focus_modifier.lower_threshold)
+            .clamp(0.0, 1.0);
         // focus_disp is bound between 0 - 1 (close enough again)
-        let focus_disp = (cam.focus_modifier.lower_radius_function)(theta);
+        let focus_disp = (cam.focus_modifier.lower_displacement_function)(theta).clamp(0.0, 1.0);
         // actual change in the xz direction, ranges from 0 - max_forward_displacement
         let displacement = focus_disp * cam.focus_modifier.max_backward_displacement;
         // move the focus "forward" by focus_disp
@@ -202,7 +208,8 @@ pub fn modify_focus(mut cam_q: Query<(&mut ThirdPersonCamera, &Transform)>) {
         )
             .into();
         // move the camera closer to the focus when looking upwards
-        let radius_change = focus_disp * -cam.focus_modifier.behind_radius_displacement;
+        let radius_disp = (cam.focus_modifier.lower_radius_function)(theta).clamp(0.0, 1.0);
+        let radius_change = radius_disp * -cam.focus_modifier.behind_radius_displacement;
         cam.zoom.radius = cam.zoom.true_radius + radius_change;
     } else {
         cam.focus = cam.true_focus;
