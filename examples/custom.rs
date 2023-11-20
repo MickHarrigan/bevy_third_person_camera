@@ -53,10 +53,12 @@ fn spawn_camera(mut commands: Commands) {
                 lower_threshold: PI / 2.,
                 upper_threshold: 2. * PI / 3.,
                 max_forward_displacement: 0.5,
-                max_backward_displacement: 0.5,
+                max_backward_displacement: 0.75,
                 // typical logistic function centered at 0.5
                 lower_displacement_function: |x| 1. / (1. + E.powf(-15. * (x - 0.5))),
                 upper_displacement_function: |x| 1. / (1. + E.powf(-15. * (x - 0.5))),
+                behind_radius_displacement: 2.0,
+                lower_radius_function: |x| 1. - E.powf(-4. * x),
             },
             ..default()
         },
