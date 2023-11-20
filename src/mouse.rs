@@ -72,8 +72,14 @@ pub fn orbit_mouse(
     }
 
     let rot_matrix = Mat3::from_quat(cam_transform.rotation);
+    // apply the offset if offset_enabled is true
+    let mut offset = Vec3::ZERO;
+    if cam.offset_enabled {
+        offset = rot_matrix.mul_vec3(Vec3::new(cam.offset.offset.0, cam.offset.offset.1, 0.0));
+    }
+
     cam_transform.translation =
-        cam.focus + rot_matrix.mul_vec3(Vec3::new(0.0, 0.0, cam.zoom.radius));
+        cam.focus + rot_matrix.mul_vec3(Vec3::new(0.0, 0.0, cam.zoom.radius)) + offset;
 }
 
 fn zoom_mouse(mut scroll_evr: EventReader<MouseWheel>, mut cam_q: Query<&mut ThirdPersonCamera>) {

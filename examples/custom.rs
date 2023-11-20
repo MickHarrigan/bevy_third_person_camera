@@ -6,8 +6,7 @@ fn main() {
     App::new()
         .add_plugins((DefaultPlugins, ThirdPersonCameraPlugin))
         .add_systems(Startup, (spawn_player, spawn_camera, spawn_world))
-        // .add_systems(Update, (player_movement_keyboard, log))
-        .add_systems(Update, player_movement_keyboard)
+        .add_systems(Update, (player_movement_gamepad, player_movement_keyboard))
         .run();
 }
 
@@ -16,14 +15,6 @@ struct Player;
 
 #[derive(Component)]
 struct Speed(f32);
-
-fn log(camera: Query<(&Transform, &ThirdPersonCamera)>) {
-    for (location, cam) in &camera {
-        // inside has to be negative to make top Pi and bottom 0
-        // info!("Angle: {}", cam.focus.angle_between(-location.translation));
-        info!("Forward: {}", location.forward().xz().normalize());
-    }
-}
 
 fn spawn_player(mut commands: Commands, assets: Res<AssetServer>) {
     let model = assets.load("Player2.gltf#Scene0");
@@ -52,10 +43,12 @@ fn spawn_camera(mut commands: Commands) {
         },
         ThirdPersonCamera {
             true_focus: Vec3::new(0., 0.81, 0.),
-            aim_enabled: false,
+            aim_enabled: true,
             aim_zoom: 0.7,
             zoom_enabled: false,
-            zoom: Zoom::new(2.0, 5.0),
+            zoom: Zoom::new(1.5, 5.0),
+            offset_enabled: true,
+            offset: Offset::new(0.4, 0.0),
             focus_modifier: CameraFocusModifier {
                 lower_threshold: PI / 2.,
                 upper_threshold: 2. * PI / 3.,
@@ -108,35 +101,91 @@ fn player_movement_keyboard(
             Err(e) => Err(format!("Error retrieving camera: {}", e)).unwrap(),
         };
 
-        let mut direction = Vec3::ZERO;
+        let mut direction = Vec2::ZERO;
 
         // forward
         if keys.pressed(KeyCode::W) {
-            direction += cam.forward();
+            direction += cam.forward().xz().normalize();
         }
 
         // back
         if keys.pressed(KeyCode::S) {
-            direction += cam.back();
+            direction += cam.back().xz().normalize();
         }
 
         // left
         if keys.pressed(KeyCode::A) {
-            direction += cam.left();
+            direction += cam.left().xz().normalize();
         }
 
         // right
         if keys.pressed(KeyCode::D) {
-            direction += cam.right();
+            direction += cam.right().xz().normalize();
         }
 
-        direction.y = 0.0;
-        let movement = direction.normalize_or_zero() * player_speed.0 * time.delta_seconds();
-        player_transform.translation += movement;
+        let movement = direction * player_speed.0 * time.delta_seconds();
+        player_transform.translation.x += movement.x;
+        player_transform.translation.z += movement.y;
+        let direction: Vec3 = (direction.x, 0.0, direction.y).into();
 
         // rotate player to face direction he is currently moving
         if direction.length_squared() > 0.0 {
             player_transform.look_to(direction, Vec3::Y);
+        }
+    }
+}
+
+fn player_movement_gamepad(
+    time: Res<Time>,
+    axis: Res<Axis<GamepadAxis>>,
+    gamepad_res: Option<Res<GamepadResource>>,
+    mut player_q: Query<(&mut Transform, &Speed), With<Player>>,
+    cam_q: Query<&Transform, (With<Camera3d>, Without<Player>)>,
+) {
+    let gamepad = if let Some(gp) = gamepad_res {
+        gp.0
+    } else {
+        return;
+    };
+
+    let Ok(cam) = cam_q.get_single() else {
+        return;
+    };
+
+    for (mut player_transform, player_speed) in player_q.iter_mut() {
+        let x_axis = GamepadAxis::new(gamepad, GamepadAxisType::LeftStickX);
+        let y_axis = GamepadAxis::new(gamepad, GamepadAxisType::LeftStickY);
+
+        let deadzone = 0.5;
+        let mut direction = Vec2::ZERO;
+        if let (Some(x), Some(y)) = (axis.get(x_axis), axis.get(y_axis)) {
+            if x.abs() > deadzone || y.abs() > deadzone {
+                if y > deadzone {
+                    // north
+                    direction += y * cam.forward().xz().normalize();
+                }
+                if y < deadzone {
+                    // south
+                    direction -= y * cam.back().xz().normalize();
+                }
+                if x > deadzone {
+                    // east
+                    direction += x * cam.right().xz().normalize();
+                }
+                if x < deadzone {
+                    // west
+                    direction -= x * cam.left().xz().normalize();
+                }
+            }
+
+            let movement = direction * player_speed.0 * time.delta_seconds();
+            player_transform.translation.x += movement.x;
+            player_transform.translation.z += movement.y;
+            let direction: Vec3 = (direction.x, 0.0, direction.y).into();
+
+            if direction.length_squared() > 0.0 {
+                player_transform.look_to(direction, Vec3::Y);
+            }
         }
     }
 }

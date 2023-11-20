@@ -88,7 +88,9 @@ pub fn orbit_gamepad(
         return;
     };
 
-    let Ok((cam, mut cam_transform)) = cam_q.get_single_mut() else { return };
+    let Ok((cam, mut cam_transform)) = cam_q.get_single_mut() else {
+        return;
+    };
 
     if cam.mouse_orbit_button_enabled && !btns.pressed(cam.gamepad_settings.mouse_orbit_button) {
         return;
@@ -129,6 +131,11 @@ pub fn orbit_gamepad(
     }
 
     let rot_matrix = Mat3::from_quat(cam_transform.rotation);
+    // apply the offset if offset_enabled is true
+    let mut offset = Vec3::ZERO;
+    if cam.offset_enabled {
+        offset = rot_matrix.mul_vec3(Vec3::new(cam.offset.offset.0, cam.offset.offset.1, 0.0));
+    }
     cam_transform.translation =
-        cam.focus + rot_matrix.mul_vec3(Vec3::new(0.0, 0.0, cam.zoom.radius));
+        cam.focus + rot_matrix.mul_vec3(Vec3::new(0.0, 0.0, cam.zoom.radius)) + offset;
 }

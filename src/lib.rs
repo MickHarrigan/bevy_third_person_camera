@@ -196,9 +196,9 @@ pub fn modify_focus(mut cam_q: Query<(&mut ThirdPersonCamera, &Transform)>) {
     } else {
         cam.focus = cam.true_focus;
     }
-    info!("Center Focus: {}", cam.true_focus);
-    info!("Actual Focus: {}", cam.focus);
-    info!("FocLoc Angle: {}", angle);
+    // info!("Center Focus: {}", cam.true_focus);
+    // info!("Actual Focus: {}", cam.focus);
+    // info!("FocLoc Angle: {}", angle);
 }
 
 /// Sets the zoom bounds (min & max)
