@@ -150,7 +150,9 @@ pub fn modify_focus(mut cam_q: Query<(&mut ThirdPersonCamera, &Transform)>) {
     // from here we check if the modifications should happen
     // (cull this later by setting this based on a boolean)
 
-    let (mut cam, transform) = cam_q.single_mut();
+    let Ok((mut cam, transform)) = cam_q.get_single_mut() else {
+        return;
+    };
     // angle is 0 - Pi, with Pi / 2 as directly behind and parallel to the ground
     let vec = cam.true_focus - transform.translation;
     // finds the angle between the vector connecting true_focus and camera location with the y axis
