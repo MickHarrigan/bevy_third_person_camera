@@ -118,7 +118,10 @@ pub struct CameraFocusModifier {
     pub upper_displacement_function: fn(f32) -> f32,
     /// Must clasp the values between 0 and 1
     pub lower_displacement_function: fn(f32) -> f32,
+    /// Determines the amount to shrink the camera zoom radius by when looking upwards
     pub behind_radius_displacement: f32,
+    /// Must clasp the values between 0 and 1
+    pub lower_radius_function: fn(f32) -> f32,
 }
 
 impl Default for CameraFocusModifier {
@@ -131,6 +134,7 @@ impl Default for CameraFocusModifier {
             upper_displacement_function: |_a| 0.,
             lower_displacement_function: |_a| 0.,
             behind_radius_displacement: 0.,
+            lower_radius_function: |_a| 0.,
         }
     }
 }
@@ -185,9 +189,9 @@ pub fn modify_focus(mut cam_q: Query<(&mut ThirdPersonCamera, &Transform)>) {
         let theta =
             (angle - cam.focus_modifier.lower_threshold) / -cam.focus_modifier.lower_threshold;
         // focus_disp is bound between 0 - 1 (close enough again)
-        let focus_disp = (cam.focus_modifier.upper_displacement_function)(theta);
+        let focus_disp = (cam.focus_modifier.lower_radius_function)(theta);
         // actual change in the xz direction, ranges from 0 - max_forward_displacement
-        let displacement = focus_disp * cam.focus_modifier.max_forward_displacement;
+        let displacement = focus_disp * cam.focus_modifier.max_backward_displacement;
         // move the focus "forward" by focus_disp
         let xz = transform.back().xz().normalize() * displacement;
         // updates the focus to be the true focus plus the displacement found before
@@ -201,9 +205,6 @@ pub fn modify_focus(mut cam_q: Query<(&mut ThirdPersonCamera, &Transform)>) {
         let radius_change = focus_disp * -cam.focus_modifier.behind_radius_displacement;
         cam.zoom.radius = cam.zoom.true_radius + radius_change;
     } else {
-        if let Some(rad) = cam.zoom.radius_copy {
-            cam.zoom.radius = rad;
-        }
         cam.focus = cam.true_focus;
     }
     // info!("Center Focus: {}", cam.true_focus);
