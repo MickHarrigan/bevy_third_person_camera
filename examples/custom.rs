@@ -57,6 +57,7 @@ fn spawn_camera(mut commands: Commands) {
                 // typical logistic function centered at 0.5
                 lower_displacement_function: |x| 1. / (1. + E.powf(-15. * (x - 0.5))),
                 upper_displacement_function: |x| 1. / (1. + E.powf(-15. * (x - 0.5))),
+                behind_radius_displacement: 2.0,
             },
             ..default()
         },
