@@ -70,11 +70,12 @@ pub fn orbit_mouse(
             cam_transform.rotation = new_rotation;
         }
     }
+    let aim_btn = mouse.pressed(cam.aim_button);
 
     let rot_matrix = Mat3::from_quat(cam_transform.rotation);
-    // apply the offset if offset_enabled is true
+    // apply the offset if offset_enabled is true and the user is aiming currently
     let mut offset = Vec3::ZERO;
-    if cam.offset_enabled {
+    if cam.offset_enabled && aim_btn {
         offset = rot_matrix.mul_vec3(Vec3::new(cam.offset.offset.0, cam.offset.offset.1, 0.0));
     }
 
