@@ -49,7 +49,7 @@ fn spawn_camera(mut commands: Commands) {
             zoom: Zoom::new(1.5, 5.0),
             offset_enabled: true,
             offset: Offset::new(0.4, 0.0),
-            focus_modifier: CameraFocusModifier {
+            focus_modifier: Some(CameraFocusModifier {
                 lower_threshold: PI / 2.,
                 upper_threshold: 2. * PI / 3.,
                 max_forward_displacement: 0.5,
@@ -59,7 +59,7 @@ fn spawn_camera(mut commands: Commands) {
                 upper_displacement_function: |x| 1. / (1. + E.powf(-15. * (x - 0.5))),
                 behind_radius_displacement: 2.0,
                 lower_radius_function: |x| 1. - E.powf(-4. * x),
-            },
+            }),
             ..default()
         },
     );
